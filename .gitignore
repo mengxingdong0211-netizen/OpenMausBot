@@ -40,3 +40,8 @@ deploy/podman/.env
 deploy/podman/.env.*
 !deploy/podman/.env.example
 /.env
+
+# TLA+ toolchain jar (formal/internal-capability/run.mjs downloads it)
+formal/tools/*.jar
+formal/internal-capability/states/
+formal/internal-capability/*TTrace*
