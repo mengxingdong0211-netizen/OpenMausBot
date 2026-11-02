@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>心迹 · 情感聊天原型</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Syne:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #13201c;
+        --paper: #e8f0ea;
+        --brand: #0f766e;
+        --accent: #ea580c;
+        --soft: #b7cfc4;
+        --bubble-bot: rgba(255, 255, 255, 0.72);
+        --bubble-user: #0f766e;
+        --mood: calm;
+        --mood-a: #7eb8a8;
+        --mood-b: #2f5d50;
+        --glow: 0.45;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family: "Noto Sans SC", "IBM Plex Sans", sans-serif;
+        color: var(--ink);
+        background: #0b1210;
+      }
+
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+      }
+
+      .shell {
+        width: min(980px, 100%);
+        display: grid;
+        gap: 14px;
+      }
+
+      .switcher {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        color: #d7e5dd;
+      }
+
+      .switcher h1 {
+        margin: 0;
+        font-family: Fraunces, "Noto Sans SC", serif;
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .switcher p {
+        margin: 2px 0 0;
+        font-size: 0.78rem;
+        opacity: 0.72;
+      }
+
+      .variants {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .variants button {
+        border: 1px solid rgba(215, 229, 221, 0.28);
+        background: rgba(255, 255, 255, 0.04);
+        color: #e8f0ea;
+        border-radius: 999px;
+        padding: 8px 14px;
+        font: 500 0.82rem/1 "Noto Sans SC", sans-serif;
+        cursor: pointer;
+      }
+
+      .variants button[aria-pressed="true"] {
+        background: #e8f0ea;
+        color: #13201c;
+        border-color: transparent;
+      }
+
+      .stage {
+        position: relative;
+        overflow: hidden;
+        border-radius: 28px;
+        min-height: min(78vh, 820px);
+        background: var(--paper);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+      }
+
+      .atmosphere {
+        position: absolute;
+        inset: -20%;
+        background:
+          radial-gradient(circle at 20% 15%, var(--mood-a), transparent 42%),
+          radial-gradient(circle at 85% 0%, var(--mood-b), transparent 38%),
+          linear-gradient(160deg, #dfece4, #c5d9cf 55%, #9fb9ad);
+        opacity: 0.95;
+        transition: background 700ms ease, filter 700ms ease;
+        filter: saturate(calc(0.85 + var(--glow)));
+        pointer-events: none;
+      }
+
+      .app {
+        position: relative;
+        z-index: 1;
+        min-height: min(78vh, 820px);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      .presence {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        padding: 28px 24px 12px;
+        text-align: center;
+      }
+
+      .brand {
+        font-family: Fraunces, "Noto Sans SC", serif;
+        font-size: clamp(2rem, 5vw, 3rem);
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        margin: 0;
+        line-height: 1;
+      }
+
+      .tagline {
+        margin: 0;
+        max-width: 28ch;
+        font-size: 0.95rem;
+        opacity: 0.78;
+      }
+
+      .orb {
+        width: 88px;
+        height: 88px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 35% 30%, #fff8, transparent 40%),
+          radial-gradient(circle at 50% 55%, var(--mood-a), var(--mood-b));
+        box-shadow:
+          0 0 0 10px color-mix(in srgb, var(--mood-a) 28%, transparent),
+          0 18px 40px color-mix(in srgb, var(--mood-b) 35%, transparent);
+        animation: breathe 4.2s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(0.94);
+        }
+        50% {
+          transform: scale(1.06);
+        }
+      }
+
+      .mood-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(19, 32, 28, 0.08);
+        font-size: 0.78rem;
+        font-weight: 500;
+      }
+
+      .mood-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--mood-a);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--mood-a) 25%, transparent);
+      }
+
+      .thread {
+        overflow: auto;
+        padding: 8px 18px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        max-width: min(560px, 92%);
+        animation: rise 420ms ease both;
+      }
+
+      .row.user {
+        align-self: flex-end;
+        flex-direction: row-reverse;
+      }
+
+      .row.bot {
+        align-self: flex-start;
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+
+      .bubble {
+        padding: 12px 14px;
+        border-radius: 18px;
+        line-height: 1.55;
+        font-size: 0.95rem;
+        white-space: pre-wrap;
+      }
+
+      .row.bot .bubble {
+        background: var(--bubble-bot);
+        backdrop-filter: blur(8px);
+        border-bottom-left-radius: 6px;
+      }
+
+      .row.user .bubble {
+        background: var(--bubble-user);
+        color: #f4fffb;
+        border-bottom-right-radius: 6px;
+      }
+
+      .composer {
+        padding: 14px 16px 18px;
+        display: grid;
+        gap: 10px;
+        background: linear-gradient(180deg, transparent, rgba(232, 240, 234, 0.72) 28%);
+      }
+
+      .prompts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .prompts button {
+        border: 0;
+        background: rgba(19, 32, 28, 0.08);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 8px 12px;
+        font: 500 0.78rem/1 "Noto Sans SC", sans-serif;
+        cursor: pointer;
+      }
+
+      .input-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 52px;
+        max-height: 140px;
+        resize: vertical;
+        border: 1px solid rgba(19, 32, 28, 0.12);
+        border-radius: 18px;
+        padding: 14px 16px;
+        font: 400 0.95rem/1.45 "Noto Sans SC", "IBM Plex Sans", sans-serif;
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--ink);
+      }
+
+      textarea:focus {
+        outline: 2px solid color-mix(in srgb, var(--brand) 55%, white);
+        outline-offset: 1px;
+      }
+
+      .send {
+        border: 0;
+        border-radius: 16px;
+        min-width: 88px;
+        height: 52px;
+        background: var(--brand);
+        color: white;
+        font: 600 0.92rem/1 "Noto Sans SC", sans-serif;
+        cursor: pointer;
+      }
+
+      .journey {
+        display: none;
+        height: 54px;
+        margin: 0 18px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.35);
+        padding: 8px 12px;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .journey svg {
+        width: 100%;
+        height: 38px;
+        display: block;
+      }
+
+      .journey-label {
+        flex: 0 0 auto;
+        font-size: 0.72rem;
+        opacity: 0.72;
+        white-space: nowrap;
+      }
+
+      .avatar {
+        display: none;
+        width: 118px;
+        height: 118px;
+        border-radius: 28px;
+        background:
+          linear-gradient(145deg, #1b3a34, #0f766e 55%, #ea580c);
+        position: relative;
+        box-shadow: 0 18px 40px rgba(15, 118, 110, 0.28);
+      }
+
+      .avatar::before,
+      .avatar::after {
+        content: "";
+        position: absolute;
+        background: #e8f0ea;
+        border-radius: 999px;
+      }
+
+      .avatar::before {
+        width: 14px;
+        height: 14px;
+        top: 42px;
+        left: 34px;
+        box-shadow: 38px 0 0 #e8f0ea;
+      }
+
+      .avatar::after {
+        width: 36px;
+        height: 10px;
+        left: 41px;
+        bottom: 34px;
+        border-radius: 0 0 18px 18px;
+      }
+
+      /* Variant A: Pulse orb */
+      [data-variant="orb"] .avatar,
+      [data-variant="orb"] .journey {
+        display: none;
+      }
+
+      [data-variant="orb"] .orb {
+        display: block;
+      }
+
+      [data-variant="orb"] {
+        --paper: #d9ebe3;
+        --ink: #123029;
+        --brand: #0f766e;
+        --bubble-user: #0f766e;
+        --bubble-bot: rgba(255, 255, 255, 0.7);
+      }
+
+      [data-variant="orb"] .brand {
+        font-family: Fraunces, "Noto Sans SC", serif;
+      }
+
+      /* Variant B: Atmosphere wash + mood journey */
+      [data-variant="atmosphere"] .orb {
+        display: none;
+      }
+
+      [data-variant="atmosphere"] .journey {
+        display: flex;
+      }
+
+      [data-variant="atmosphere"] .avatar {
+        display: none;
+      }
+
+      [data-variant="atmosphere"] {
+        --paper: #f3efe6;
+        --ink: #1c1914;
+        --brand: #b45309;
+        --bubble-user: #9a3412;
+        --bubble-bot: rgba(255, 252, 245, 0.78);
+      }
+
+      [data-variant="atmosphere"] .brand {
+        font-family: Syne, "Noto Sans SC", sans-serif;
+        letter-spacing: -0.03em;
+      }
+
+      [data-variant="atmosphere"] .atmosphere {
+        background:
+          radial-gradient(circle at 12% 18%, var(--mood-a), transparent 45%),
+          radial-gradient(circle at 88% 8%, var(--mood-b), transparent 40%),
+          linear-gradient(165deg, #f7f1e4, #eadfc8 50%, #d8c4a0);
+      }
+
+      /* Variant C: Character presence */
+      [data-variant="presence"] .orb {
+        display: none;
+      }
+
+      [data-variant="presence"] .avatar {
+        display: block;
+      }
+
+      [data-variant="presence"] .journey {
+        display: none;
+      }
+
+      [data-variant="presence"] {
+        --paper: #e7eef5;
+        --ink: #102033;
+        --brand: #1d4e89;
+        --bubble-user: #1d4e89;
+        --bubble-bot: rgba(255, 255, 255, 0.82);
+      }
+
+      [data-variant="presence"] .brand {
+        font-family: Syne, "Noto Sans SC", sans-serif;
+      }
+
+      [data-variant="presence"] .atmosphere {
+        background:
+          radial-gradient(circle at 70% 0%, var(--mood-a), transparent 42%),
+          linear-gradient(180deg, #d7e4f2, #b9c9da 60%, #8ea4bd);
+      }
+
+      [data-variant="presence"] .presence {
+        grid-template-columns: auto 1fr;
+        justify-items: start;
+        text-align: left;
+        align-items: center;
+        gap: 16px 18px;
+      }
+
+      [data-variant="presence"] .presence .brand,
+      [data-variant="presence"] .presence .tagline,
+      [data-variant="presence"] .presence .mood-chip {
+        grid-column: 2;
+      }
+
+      [data-variant="presence"] .avatar {
+        grid-row: 1 / span 3;
+      }
+
+      @media (max-width: 640px) {
+        body {
+          padding: 0;
+        }
+
+        .shell {
+          gap: 0;
+        }
+
+        .switcher {
+          padding: 12px 14px 8px;
+        }
+
+        .stage {
+          border-radius: 0;
+          min-height: 100vh;
+        }
+
+        .app {
+          min-height: 100vh;
+        }
+
+        [data-variant="presence"] .presence {
+          grid-template-columns: 1fr;
+          justify-items: center;
+          text-align: center;
+        }
+
+        [data-variant="presence"] .avatar {
+          grid-row: auto;
+        }
+
+        [data-variant="presence"] .presence .brand,
+        [data-variant="presence"] .presence .tagline,
+        [data-variant="presence"] .presence .mood-chip {
+          grid-column: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="switcher">
+        <div>
+          <h1>心迹原型开关</h1>
+          <p>同一套对话，三种情感在场方式。按 1 / 2 / 3 也可切换。</p>
+        </div>
+        <div class="variants" role="group" aria-label="原型变体">
+          <button type="button" data-pick="orb" aria-pressed="true">A · 脉搏光球</button>
+          <button type="button" data-pick="atmosphere" aria-pressed="false">B · 气氛浸染</button>
+          <button type="button" data-pick="presence" aria-pressed="false">C · 角色在场</button>
+        </div>
+      </div>
+
+      <div class="stage" data-variant="orb" data-mood="calm">
+        <div class="atmosphere" aria-hidden="true"></div>
+        <div class="app">
+          <header class="presence">
+            <div class="orb" aria-hidden="true"></div>
+            <div class="avatar" aria-hidden="true"></div>
+            <h2 class="brand">心迹</h2>
+            <p class="tagline">一个会跟着你情绪呼吸的聊天机器人原型</p>
+            <div class="mood-chip">
+              <span class="mood-dot" aria-hidden="true"></span>
+              <span id="moodLabel">此刻：平静</span>
+            </div>
+          </header>
+
+          <div class="journey" aria-label="情绪轨迹">
+            <span class="journey-label">情绪轨迹</span>
+            <svg viewBox="0 0 240 38" preserveAspectRatio="none" aria-hidden="true">
+              <path
+                id="journeyPath"
+                d="M0 22 C 40 22, 40 22, 80 22 S 120 22, 160 22 S 200 22, 240 22"
+                fill="none"
+                stroke="#9a3412"
+                stroke-width="2.5"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+
+          <main class="thread" id="thread" aria-live="polite"></main>
+
+          <footer class="composer">
+            <div class="prompts" id="prompts">
+              <button type="button" data-text="今天有点累，但说不上为什么。">今天有点累</button>
+              <button type="button" data-text="刚谈完一个好消息，心里还在发亮。">有点开心</button>
+              <button type="button" data-text="事情堆在一起，我有点慌。">有点焦虑</button>
+            </div>
+            <form class="input-row" id="form">
+              <label class="visually-hidden" for="input" style="position: absolute; left: -9999px"
+                >消息</label
+              >
+              <textarea
+                id="input"
+                rows="1"
+                placeholder="跟心迹说说此刻的感觉…"
+                autocomplete="off"
+              ></textarea>
+              <button class="send" type="submit">发送</button>
+            </form>
+          </footer>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const moods = {
+        calm: {
+          label: "平静",
+          a: "#7eb8a8",
+          b: "#2f5d50",
+          glow: 0.35,
+          y: 22,
+        },
+        joy: {
+          label: "明亮",
+          a: "#f2b705",
+          b: "#ea580c",
+          glow: 0.7,
+          y: 8,
+        },
+        sad: {
+          label: "低落",
+          a: "#7aa0b8",
+          b: "#3d5568",
+          glow: 0.25,
+          y: 30,
+        },
+        anxiety: {
+          label: "紧绷",
+          a: "#ef9f5a",
+          b: "#b45309",
+          glow: 0.55,
+          y: 14,
+        },
+        anger: {
+          label: "烦躁",
+          a: "#f07167",
+          b: "#9f1239",
+          glow: 0.65,
+          y: 10,
+        },
+      };
+
+      const replies = {
+        calm: [
+          "我在这儿。你不用说得很完整，我先陪着你把这一口气慢慢吐出来。",
+          "听起来今天需要一点缓。你愿意多说一点，还是先安静待一会儿？",
+        ],
+        joy: [
+          "这份亮我感觉到了。想把那个好消息再展开一点点吗？我想听你最得意的那一段。",
+          "开心值得被认真对待。我替你把这一下记住了。",
+        ],
+        sad: [
+          "累又说不清，其实很常见。我不会催你找原因，你愿意的话，我们先命名眼前这一下。",
+          "我在。低落不需要立刻修好。你现在最重的是哪一块？",
+        ],
+        anxiety: [
+          "堆在一起的时候，脑子会把所有事都放大。我们先只挑一件，最小的那件。",
+          "慌是有信号的。你现在身体哪里最紧？我们从那儿开始。",
+        ],
+        anger: [
+          "烦躁说明有边界被碰到了。你想先骂清楚，还是先找哪一步能松一点？",
+          "我听得出火气。火气背后通常有委屈或被忽视。你更接近哪边？",
+        ],
+      };
+
+      const stage = document.querySelector(".stage");
+      const thread = document.getElementById("thread");
+      const form = document.getElementById("form");
+      const input = document.getElementById("input");
+      const moodLabel = document.getElementById("moodLabel");
+      const journeyPath = document.getElementById("journeyPath");
+      const pickButtons = [...document.querySelectorAll("[data-pick]")];
+      const journeyYs = [22, 22, 22, 22, 22];
+
+      function detectMood(text) {
+        const t = text.toLowerCase();
+        if (/开心|高兴|好消息|发亮|兴奋|喜欢|幸福/.test(t)) return "joy";
+        if (/累|难过|低落|想哭|空虚|孤单|丧/.test(t)) return "sad";
+        if (/慌|焦虑|紧张|担心|堆|压力|睡不着/.test(t)) return "anxiety";
+        if (/烦|生气|火大|讨厌|受不了|气死/.test(t)) return "anger";
+        return "calm";
+      }
+
+      function setMood(mood) {
+        const m = moods[mood];
+        stage.dataset.mood = mood;
+        stage.style.setProperty("--mood-a", m.a);
+        stage.style.setProperty("--mood-b", m.b);
+        stage.style.setProperty("--glow", String(m.glow));
+        moodLabel.textContent = `此刻：${m.label}`;
+        journeyYs.push(m.y);
+        if (journeyYs.length > 5) journeyYs.shift();
+        const [y0, y1, y2, y3, y4] = journeyYs;
+        journeyPath.setAttribute(
+          "d",
+          `M0 ${y0} C 40 ${y0}, 40 ${y1}, 80 ${y1} S 120 ${y2}, 160 ${y2} S 200 ${y3}, 240 ${y4}`,
+        );
+      }
+
+      function addMessage(role, text) {
+        const row = document.createElement("div");
+        row.className = `row ${role}`;
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = text;
+        row.appendChild(bubble);
+        thread.appendChild(row);
+        thread.scrollTop = thread.scrollHeight;
+      }
+
+      function replyFor(mood) {
+        const options = replies[mood];
+        return options[Math.floor(Math.random() * options.length)];
+      }
+
+      function send(text) {
+        const cleaned = text.trim();
+        if (!cleaned) return;
+        addMessage("user", cleaned);
+        const mood = detectMood(cleaned);
+        setMood(mood);
+        window.setTimeout(() => {
+          addMessage("bot", replyFor(mood));
+        }, 420);
+      }
+
+      function setVariant(name) {
+        stage.dataset.variant = name;
+        pickButtons.forEach((btn) => {
+          btn.setAttribute("aria-pressed", String(btn.dataset.pick === name));
+        });
+      }
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const value = input.value;
+        input.value = "";
+        send(value);
+      });
+
+      document.getElementById("prompts").addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-text]");
+        if (!button) return;
+        send(button.dataset.text);
+      });
+
+      pickButtons.forEach((button) => {
+        button.addEventListener("click", () => setVariant(button.dataset.pick));
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if (event.target === input) return;
+        if (event.key === "1") setVariant("orb");
+        if (event.key === "2") setVariant("atmosphere");
+        if (event.key === "3") setVariant("presence");
+      });
+
+      setMood("calm");
+      addMessage(
+        "bot",
+        "你好，我是心迹。今天想从哪一种感觉开始？你可以点下面的句子，也可以自己写。",
+      );
+    </script>
+  </body>
+</html>
