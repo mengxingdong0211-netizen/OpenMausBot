@@ -31,7 +31,7 @@ If none of those moved, say so and stop.
 | Lookup + active check | `authorizedInternalCapability`, `internalCapabilityIsActive` |
 | Post-authorize recheck before side effects | `readInternalBody`, `requireActiveInternalCapability` |
 
-Last synced to code at commit: `88d54eb17a3655b968470cbbf3b5097de225a8b5`
+Last synced to code at commit: `83e89b576a007eb0e274f76d2e5f5af6b22a714a`
 
 Move that commit forward only after you re-run the check below and confirm the model and mirror still describe those functions.
 
