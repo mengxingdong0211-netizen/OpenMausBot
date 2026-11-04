@@ -353,6 +353,15 @@ export class RuntimeCoordinator implements Coordinator {
     }
   }
 
+  cancelQueued(ids: ReadonlySet<string>, reason: string): void {
+    this.ready();
+    if (ids.size === 0) return;
+    for (const n of this.live()) {
+      if (!ids.has(n.id) || n.status !== "queued") continue;
+      this.runtime.cancel(n.id, reason, "stopped");
+    }
+  }
+
   cancelDirect(threadId: string, reason = "Stopped by user"): void {
     this.ready();
     for (const n of this.live()) if (this.direct(n, threadId)) this.runtime.cancel(n.id, reason, "stopped");
@@ -469,7 +478,12 @@ export class RuntimeCoordinator implements Coordinator {
     const host = this.host;
     return {
       validate: (a, parent) => host.validate(view(a, parent), parent && this.project(parent)),
-      canStart: a => !host.busy(this.project(a)),
+      canStart: (a) => {
+        const node = this.project(a);
+        const hold = host.hold?.(node);
+        if (typeof hold === "string" && hold !== "") return hold;
+        return !host.busy(node);
+      },
       run: (a, input, signal) => this.run(a, input, signal),
       park: (a, question, restored) => host.park(this.project(a), question, restored),
       report: (a, parent) => host.report(view(a, parent), parent && this.project(parent)),

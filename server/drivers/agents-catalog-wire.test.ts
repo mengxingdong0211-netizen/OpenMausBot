@@ -69,7 +69,7 @@ const PROFILES = profiles();
 const CHIEF_ONLY_TOOLS = ["create_bot", "list_team_setup", "list_team_library", "propose_team_setup", "propose_bot_deletion", "manage_room", "retry_thread"];
 const CHIEF_TARGET_TOOLS = ["propose_profile", "propose_model"];
 const CHIEF_PROFILE_TARGET = " A Chief of Staff may pass for_bot_id (from list_bots) for a requested change to another bot in its section.";
-const TEAMWORK_TOOLS = ["list_room_targets", "coordinate_bots", "assignment_status", "list_bots", "list_rooms", "list_threads", "close_thread", "start_thread", "post_to_room"];
+const TEAMWORK_TOOLS = ["list_room_targets", "coordinate_bots", "grant_seat", "assignment_status", "list_bots", "list_rooms", "list_threads", "close_thread", "start_thread", "post_to_room"];
 const MAUSBOT_TOOLS = ["list_unread_notifications", "mark_notifications_read"];
 /** MausBot's tools may make its list at most this much longer than the same Chief's without them. */
 const MAUSBOT_ADDS = 0.02;
@@ -89,15 +89,15 @@ const BUDGET_BASELINE: Record<string, number> = {
   "skills+voice": 60510,
   "skills+shared": 61960,
   "skills+shared+voice": 62741,
-  "non-chief": 47853,
-  "voice+non-chief": 48634,
-  "shared+non-chief": 50084,
-  "shared+voice+non-chief": 50865,
-  "skills+non-chief": 50672,
-  "skills+voice+non-chief": 51453,
-  "skills+shared+non-chief": 52903,
-  "skills+shared+voice+non-chief": 53684,
-  "skills+shared+voice+cloud-home": 61822,
+  "non-chief": 48948,
+  "voice+non-chief": 49729,
+  "shared+non-chief": 51213,
+  "shared+voice+non-chief": 51994,
+  "skills+non-chief": 51767,
+  "skills+voice+non-chief": 52548,
+  "skills+shared+non-chief": 54032,
+  "skills+shared+voice+non-chief": 54813,
+  "skills+shared+voice+cloud-home": 63636,
   "skills+shared+voice+non-chief+cloud-home": 53961,
   "default+legacy-switches": 56910,
   "default+mausbot": 57561,
@@ -106,8 +106,8 @@ const BUDGET_BASELINE: Record<string, number> = {
   "skills+shared+voice+escalations+x": 67410,
   "skills+shared+voice+escalations+x+team": 68042,
   "default+no-computer-pick": 55698,
-  "default+room": 48780,
-  "non-chief+room": 39723,
+  "default+room": 49875,
+  "non-chief+room": 40818,
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';

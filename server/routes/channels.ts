@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ResolvedSender, WireGroup } from "../../shared/wire.ts";
+import type { ResolvedSender, WireGroup, WireRoundtable } from "../../shared/wire.ts";
 import { admit } from "../admission.ts";
 import {
   cancelChannelMessage,
@@ -86,6 +86,10 @@ export interface ChannelRouteDeps {
     options: { via?: "api"; sender?: ResolvedSender; trigger?: UsageTrigger; threadId?: string },
   ): Message;
   applyRoomHoldsFromMessage(groupId: string, text: string): void;
+  roundtableLive(threadId: string): boolean;
+  openRoundtable(groupId: string, threadId: string, body: unknown): WireRoundtable;
+  adjournRoundtable(groupId: string, threadId: string): void;
+  cancelRoundtableBlocked(groupId: string, threadId: string): void;
   cancelGroupTurnOperations(groupId: string, threadId: string): void;
   drainQueuedChannelSends(): void;
   clearTurnDigestState(threadId: string): void;
@@ -102,7 +106,8 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
     store, cfg, broadcast, actorKey, threadStarters, phoneSecretSubmissions, sendSequencer, roomMemberContexts, skillReview,
     groupSpeakers, groupTurnOperations, lastReply, cloudThreadRefusal, messageSender, usageTriggerFor, publicGroupState,
     groupWithThread, updateChannel, groupIsWorking, groupThreadIsWorking, readCursor, pageSize, messagePage,
-    resolveReplyTarget, runningTurnInstance, startGroupTurn, engineSteersImages, applyRoomHoldsFromMessage, cancelGroupTurnOperations,
+    resolveReplyTarget, runningTurnInstance, startGroupTurn, engineSteersImages, applyRoomHoldsFromMessage,
+    roundtableLive, openRoundtable, adjournRoundtable, cancelRoundtableBlocked, cancelGroupTurnOperations,
     drainQueuedChannelSends, clearTurnDigestState, closeOpenApprovals, revokeInternalCapabilitiesForThread,
     stagedSkillCleanupsForThread, rejectDeletedThreadSkillStages,
   } = deps;
@@ -303,6 +308,30 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
       rejectDeletedThreadSkillStages(stagedSkillCleanups);
       return json(res, 200, { ok: true });
     }
+    m = path.match(/^\/api\/groups\/([\w-]+)\/roundtable$/);
+    if (m && (method === "POST" || method === "DELETE")) {
+      const group = store.group(m[1]);
+      if (!group) return json(res, 404, { error: "no such room" });
+      if (method === "DELETE") {
+        const requested = url.searchParams.get("threadId");
+        if (requested !== null && !/^[\w-]+$/.test(requested)) return json(res, 400, { error: "threadId must be a task id" });
+        const threadId = requested ?? group.threadId;
+        adjournRoundtable(group.id, threadId);
+        cancelRoundtableBlocked(group.id, threadId);
+        return json(res, 200, { ok: true });
+      }
+      const body = await readBody(req);
+      const threadId = body && typeof body === "object" && !Array.isArray(body) && typeof body.threadId === "string"
+        ? body.threadId
+        : group.threadId;
+      try {
+        return json(res, 201, { roundtable: openRoundtable(group.id, threadId, body ?? {}) });
+      } catch (error) {
+        const status = (error as { status?: unknown }).status;
+        const code = status === 400 || status === 404 || status === 409 ? status : 500;
+        return json(res, code, { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
     m = path.match(/^\/api\/groups\/([\w-]+)\/messages$/);
     if (m && method === "POST") {
       const body = await readBody(req);
@@ -382,6 +411,9 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
             throw Object.assign(new Error("no such thread in channel"), {
               status: 404,
             });
+          }
+          if (channelMode === "goal" && roundtableLive(threadId)) {
+            throw Object.assign(new Error("a roundtable is in session on this thread"), { status: 409 });
           }
           if (channelMode === "chat") applyRoomHoldsFromMessage(current.id, text);
           const threadWorking = groupThreadIsWorking(current.id, threadId);

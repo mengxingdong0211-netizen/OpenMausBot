@@ -626,6 +626,7 @@ describe("agents-proxy MCP surface", () => {
       "shared_computer",
       "list_room_targets",
       "coordinate_bots",
+      "grant_seat",
       "assignment_status",
       "list_bots",
       "list_rooms",
@@ -2102,7 +2103,7 @@ describe("standing external runtime", () => {
     const everyTurn = (await rpc("tools/list")).result.tools.filter((tool: any) => !chiefOnly.includes(tool.name) && tool.name !== "select_computer");
     const names = list.result.tools.map((tool: any) => tool.name);
     expect(names).toEqual(everyTurn.map((tool: any) => tool.name));
-    const teamwork = ["list_room_targets", "coordinate_bots", "assignment_status", "list_bots", "list_rooms", "list_threads", "close_thread", "start_thread", "post_to_room"];
+    const teamwork = ["list_room_targets", "coordinate_bots", "grant_seat", "assignment_status", "list_bots", "list_rooms", "list_threads", "close_thread", "start_thread", "post_to_room"];
     for (const name of teamwork) {
       expect(list.result.tools.find((tool: any) => tool.name === name), name).toEqual(everyTurn.find((tool: any) => tool.name === name));
     }
