@@ -842,6 +842,34 @@ export interface GroupTask {
   busyBotId?: string | null;
 }
 
+/** Phase of a live roundtable. Computed when the room is projected, never stored. */
+export type WireRoundtablePhase = "awaiting-person" | "chair" | "seat" | "adjourning";
+
+/** Chair cell on the seat strip. `speaking` is the confirmed claim.
+ * `up` means this phase has released the chair and nobody has claimed the turn. */
+export type WireChairPresence = "speaking" | "up" | "idle";
+
+/** Seat cell on the strip. `speaking` is the confirmed claim. `up` is a released
+ * seat that is not claimed yet, or the next seat an advance would call.
+ * `held` is a hold, or a pending seat whose bot is no longer an active member. */
+export type WireSeatPresence = "speaking" | "up" | "waiting" | "done" | "skipped" | "held";
+
+export interface WireRoundtableSeat {
+  botId: string;
+  presence: WireSeatPresence;
+}
+
+/** One open roundtable on a room thread. Derived. The session file does not store it. */
+export interface WireRoundtable {
+  threadId: string;
+  chairBotId: string;
+  chairPresence: WireChairPresence;
+  round: number;
+  rounds: 1 | 2 | 3;
+  phase: WireRoundtablePhase;
+  seats: readonly WireRoundtableSeat[];
+}
+
 /** A room as a client may see it: the record plus the computed working flag. */
 export interface WireGroup {
   /** Computed from the usage ledger, not stored in groups.json. */
@@ -901,6 +929,9 @@ export interface WireGroup {
   heldMessages?: Record<string, RoomHeldMessage[]>;
   /** transient: who waits in each of the room's threads, and on whom; absent or empty when nobody waits. */
   queue?: RoomQueueEntry[];
+  /** Live roundtables in this room, including one that is still adjourning.
+   * The group projection always sets it. A partial frame may omit it. */
+  roundtables?: WireRoundtable[];
 }
 
 export interface RoomQueueEntry {
