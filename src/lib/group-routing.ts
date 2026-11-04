@@ -1,6 +1,13 @@
 import type { Bot, ConfigStatus, Group, GroupDefaultResponder } from "@/state/store";
 import { isMentionBoundary, isMentionNameContinuation } from "../../shared/mention-boundary";
 import { t } from "./i18n";
+import { roundtableIdleHint, threadRoundtable } from "./roundtable";
+
+function roundtableHint(group: Group, members: readonly { id: string; name: string }[]): string | undefined {
+  const table = threadRoundtable(group);
+  if (!table) return undefined;
+  return roundtableIdleHint(table, (botId) => members.find((member) => member.id === botId)?.name || botId);
+}
 
 export function jevRoomRoutingOn(config: ConfigStatus | null | undefined): boolean {
   return Boolean(config?.decider?.enabled && config.decider.jobs.roomRouting);
@@ -27,6 +34,8 @@ export function defaultResponderName(group: Group, members: Bot[]): string | nul
 }
 
 export function groupResponseHint(group: Group, members: Bot[], { jevOn = true }: { jevOn?: boolean } = {}): string {
+  const hint = roundtableHint(group, members);
+  if (hint) return hint;
   if (group.dm) return t("room.hint.dm");
   const value = effectiveDefaultResponder(group, members);
   if (value.kind === "everyone") return t("room.hint.everyone");
@@ -37,6 +46,8 @@ export function groupResponseHint(group: Group, members: Bot[], { jevOn = true }
 }
 
 export function groupComposerHint(group: Group, members: Bot[], { jevOn = true }: { jevOn?: boolean } = {}): string {
+  const hint = roundtableHint(group, members);
+  if (hint) return hint;
   if (group.dm) return t("composer.hint.dm");
   const value = effectiveDefaultResponder(group, members);
   if (value.kind === "everyone") return t("composer.hint.everyone");

@@ -4580,6 +4580,8 @@
   "room.hint.lead": "{name} responds by default. @mention someone else to choose them instead.",
   "room.hint.leadFallback": "The lead bot",
   "room.hint.auto": "Jev picks the best-fit bot for each message. @mention someone to choose them yourself.",
+  "roundtable.hint.toChair": "To {chair}",
+  "roundtable.hint.awaitingNext": "To {chair}. {name} is next.",
   "computer.routine.everyMin": "Every {minutes} min",
   "computer.routine.everyDay": "Every day",
   "computer.routine.weekdays": "Weekdays",
