@@ -282,6 +282,15 @@ export async function callTool(called: string, input: Json, context: ToolCallCon
     }) });
     return { text: JSON.stringify(r), ...(r.error ? { isError: true } : {}) };
   }
+  if (name === "grant_seat") {
+    const decision = args.decision;
+    if (decision !== "advance" && decision !== "skip" && decision !== "yield" && decision !== "adjourn") {
+      return { text: "grant_seat takes decision: advance, skip, yield, or adjourn.", isError: true };
+    }
+    const r = await api("/api/internal/grant-seat", { method: "POST", body: JSON.stringify({ decision }) });
+    if (r.error) return { text: String(r.error), isError: true };
+    return { text: "Recorded. It applies after this turn ends and starts no teammate." };
+  }
   if (name === "assignment_status") {
     const id = args.id === undefined || args.id === null || args.id === "" ? "" : String(args.id).trim();
     if (id && !/^[\w-]{4,64}$/.test(id)) {

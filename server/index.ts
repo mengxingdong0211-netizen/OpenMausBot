@@ -232,6 +232,14 @@ import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import { createGoalTurns } from "./host/goal-turns.ts";
 import { createGoalCards, type LiveGoalRun } from "./host/goal-cards.ts";
 import { createOneOnOneGoals } from "./host/one-on-one-goals.ts";
+import {
+  createRoundtableTable,
+  type GrantHandler,
+  type RoundtableGroupView,
+  type RoundtableMemberResult,
+  type RoundtableMemberTurn,
+  type ThreadPending,
+} from "./roundtable.ts";
 
 import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
@@ -260,6 +268,7 @@ import {
 } from "./steer-queue.ts";
 import {
   drainChannelMessages,
+  queuedChannelSends,
   restoreChannelMessages,
   type ChannelQueueItem,
 } from "./channel-queue.ts";
@@ -3946,6 +3955,70 @@ const questionRouting = createQuestionRouting({ store, active: () => coordinator
   answerLive: async (threadId, requestId, text) => await answerRequest(threadId, botForThread(store.botByThread(threadId)?.id ?? "", threadId)?.modelSelection.instanceId ?? "", requestId, "answer", text) === "answered", settleSignIns: (node) => signInSettle.answeredElsewhere(node),
   keptPrivate: (node, requester) => keptPrivate({ child: teamHost.privateTo(node.threadId), parent: teamHost.privateTo(requester.threadId) }),
   steer: async (threadId, text) => canSteerThread(threadId) && (await steerThread(threadId, text)) !== "refused" });
+function roundtableGroupView(groupId: string): RoundtableGroupView | undefined {
+  const group = store.group(groupId);
+  if (!group) return undefined;
+  const members = group.memberIds.flatMap((id) => {
+    const bot = store.bot(id);
+    return bot ? [{ id: bot.id, name: bot.name, ...(bot.hidden ? { hidden: true } : {}) }] : [];
+  });
+  const active = group.memberIds.flatMap((id) => {
+    const bot = store.bot(id);
+    return bot && !bot.hidden ? [bot] : [];
+  });
+  return {
+    id: group.id,
+    ...(group.dm ? { dm: true } : {}),
+    setupPending: roomSetupPending(group),
+    threadIds: roomThreadIds(group),
+    members,
+    leadBotId: selectGroupGoalCoordinator(active, group.defaultResponder)?.id ?? null,
+  };
+}
+
+function roundtablePending(threadId: string): ThreadPending {
+  const group = store.groupByThread(threadId);
+  if (!group) return "ready";
+  for (const operation of groupTurnOperations.get(group.id) ?? []) {
+    if (!operation.cancelled && operation.threadId === threadId && operation.goalRun && !operation.goalRun.finished) return "goal";
+  }
+  if (groupThreadIsWorking(group.id, threadId)) return "working";
+  if (queuedChannelSends(threadId) > 0) return "queued";
+  return "ready";
+}
+
+function cancelRoundtableThread(threadId: string): void {
+  const group = store.groupByThread(threadId);
+  if (!group) return;
+  const speaker = groupSpeakers.get(threadId);
+  const bot = speaker ? store.bot(speaker.botId) : undefined;
+  for (const operation of groupTurnOperations.get(group.id) ?? []) {
+    if (operation.threadId !== threadId || operation.cancelled) continue;
+    operation.cancelled = true;
+    operation.cancellation.abort();
+  }
+  if (!bot) return;
+  void runningTurnInstance(bot, threadId)?.adapter.interruptTurn(threadId).catch(() => {});
+}
+
+let grantSeat: GrantHandler = () => ({ ok: false, error: "grant_seat is not available" });
+const roundtable = createRoundtableTable({
+  dataDir: DATA_DIR,
+  now: () => Date.now(),
+  group: roundtableGroupView,
+  held: (groupId, botId) => roomHeld(store.group(groupId), botId),
+  pending: roundtablePending,
+  onChanged: (groupId) => {
+    const group = store.group(groupId);
+    if (group) broadcast({ kind: "group", group: publicGroupState(group) });
+  },
+  cancelThread: cancelRoundtableThread,
+  note: (threadId, text) => {
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: text, ok: false } });
+  },
+  registerGrantTool: (handler) => { grantSeat = handler; },
+});
+
 const coordinator: Coordinator = createCoordinator({
   dataDir: DATA_DIR,
   now: Date.now,
@@ -3959,6 +4032,9 @@ const coordinator: Coordinator = createCoordinator({
       : !node.parentId && node.groupId ? roomRootProblem(node)
       : roomHandoffProblem(node, parent) ??
       (parent && store.bot(parent.botId)?.approvePeerComms && !fullAccessForSource(parent.botId, parent.threadId) && !node.approvalGranted ? "Sender now requires peer approval; submit a new approved request" : undefined),
+    hold: (n) => n.groupId && roundtable.admit(n.threadId, n.botId, "coordinator") === "queue"
+      ? "a roundtable is in session on this thread"
+      : undefined,
     busy: n => {
       const seat = parkedSeats.get(n.id);
       if (seat && !turnResources.free(seat)) return true;
@@ -4182,6 +4258,7 @@ function publicGroupState(record: GroupRecord): WireGroup {
     working: groupIsWorking(record) || openHandoffs.length > 0,
     // Always present, so a frame with nobody waiting clears the last one.
     queue: roomJobs.roomLineOf(record),
+    roundtables: roundtable.project(record.id, (threadId) => groupSpeakers.get(threadId)?.botId),
   };
 }
 
@@ -4206,7 +4283,27 @@ function beginGroupTurnOperation(
   return operation;
 }
 
+function roundtableBlockedAssignmentIds(groupId: string, threadId: string): Set<string> {
+  const speakerId = groupSpeakers.get(threadId)?.botId;
+  const ids = new Set<string>();
+  for (const node of coordinator.active()) {
+    if (node.groupId !== groupId || node.threadId !== threadId || node.status !== "queued") continue;
+    if (store.bot(node.botId)?.busy && node.botId !== speakerId) continue;
+    ids.add(node.id);
+  }
+  return ids;
+}
+
+function cancelRoundtableBlockedAssignments(groupId: string, threadId: string): void {
+  coordinator.cancelQueued(roundtableBlockedAssignmentIds(groupId, threadId), "the roundtable adjourned");
+}
+
 function finishGroupTurnOperation(groupId: string, operation: GroupTurnOperation) {
+  const adjourning = roundtable.project(groupId, (threadId) => groupSpeakers.get(threadId)?.botId)
+    .some((row) => row.threadId === operation.threadId && row.phase === "adjourning");
+  const blocked = adjourning ? roundtableBlockedAssignmentIds(groupId, operation.threadId) : undefined;
+  roundtable.operationEnded(operation.threadId, operation.id);
+  if (blocked) coordinator.cancelQueued(blocked, "the roundtable adjourned");
   roomMemberLock.releaseThread(operation.threadId);
   roomTurnEnded(operation);
   if (operation.goalRun && !operation.goalRun.finished) {
@@ -9793,6 +9890,7 @@ async function runClaimedGroupMemberTurn(
     ? group.threadId === threadId
     : Boolean(group && store.groupTaskByThread(group.id, threadId));
   if (!group || !bot || !ownsThread) return false;
+  if (roundtable.admit(threadId, botId, "member-turn") === "refuse") return false;
   if (roomHeld(group, bot.id)) {
     noteHeldSkip(group.id, threadId, bot, latestRoomTextId(threadId));
     if (orchestration) {
@@ -10875,7 +10973,126 @@ type StartGroupTurnOptions = {
   sender?: ResolvedSender;
   trigger?: UsageTrigger;
   queuedGroup?: ChannelQueueItem[];
+  calendar?: boolean;
 };
+
+function roundtableMemberResult(
+  operation: GroupTurnOperation,
+  outcome: GroupMemberTurnOutcome | undefined,
+): RoundtableMemberResult {
+  if (operation.cancelled && outcome !== "settled") return { outcome: "cancelled" };
+  switch (outcome) {
+    case "settled":
+      return { outcome: "settled" };
+    case "unavailable":
+    case "busy":
+    case "parked":
+      return { outcome: "unavailable" };
+    case "provider_failed":
+    case "dispatch_failed":
+    case "spend_capped":
+    case "stalled":
+    case "timed_out":
+    case undefined:
+      return { outcome: "failed" };
+    case "cancelled":
+      return { outcome: "cancelled" };
+    default: {
+      const unexpected: never = outcome;
+      throw new Error(`unexpected member outcome ${String(unexpected)}`);
+    }
+  }
+}
+
+async function runRoundtableMember(
+  groupId: string,
+  operation: GroupTurnOperation,
+  turn: RoundtableMemberTurn,
+): Promise<RoundtableMemberResult> {
+  const bot = store.bot(turn.botId);
+  if (!bot) return { outcome: "unavailable" };
+  const verdict = await waitForChatRoomMember(operation, operation.threadId, bot);
+  switch (verdict) {
+    case "stop":
+      return { outcome: "cancelled" };
+    case "skip":
+      return { outcome: "unavailable" };
+    case "run":
+      break;
+    default: {
+      const unexpected: never = verdict;
+      throw new Error(`unexpected room member wait ${String(unexpected)}`);
+    }
+  }
+  const result: GroupTurnOrchestration["result"] = {};
+  await runGroupMemberTurn(
+    groupId,
+    operation.threadId,
+    turn.botId,
+    0,
+    new Set(),
+    undefined,
+    undefined,
+    () => operation.cancelled,
+    () => groupProviderHandshakeStarted(operation),
+    () => groupProviderHandshakeSettled(operation),
+    { claimed: false },
+    { systemInstructions: turn.instructions, followMentions: false, result },
+    operation,
+  );
+  return roundtableMemberResult(operation, result.outcome);
+}
+
+function roomStillStopping(threadId: string): boolean {
+  const speaker = groupSpeakers.get(threadId);
+  if (!speaker) return false;
+  const owner = store.bot(speaker.botId);
+  store.appendMessage(threadId, {
+    role: "bot",
+    kind: "activity",
+    tool: {
+      name: owner
+        ? serverLine(threadLanguage(threadId), "server.rooms.stillStopping", { bot: owner.name })
+        : serverLine(threadLanguage(threadId), "server.rooms.someoneStillStopping"),
+      ok: false,
+    },
+  });
+  return true;
+}
+
+function startSeatedGroupTurn(groupId: string, threadId: string, message: Message, options: StartGroupTurnOptions): Message {
+  const operation = beginGroupTurnOperation(groupId, threadId, []);
+  if (message.role === "user" && !message.via && (!options.trigger || options.trigger.kind === "user" || options.trigger.kind === "owner")) {
+    operation.requestMessageId = message.id;
+  }
+  if (options.queuedGroup && options.queuedGroup.length > 0) {
+    operation.queuedQueueIds = options.queuedGroup.map((item) => item.id);
+  }
+  const prev = groupQueues.get(threadId) ?? Promise.resolve();
+  const next = prev.then(async () => {
+    if (operation.cancelled) return;
+    if (roomStillStopping(threadId)) return;
+    try {
+      await roundtable.run({
+        operationId: operation.id,
+        groupId,
+        threadId,
+        cancelled: () => operation.cancelled,
+        humanWaiting: () => queuedChannelSends(threadId) > 0,
+        runMember: (turn) => runRoundtableMember(groupId, operation, turn),
+      });
+    } catch (error) {
+      store.appendMessage(threadId, {
+        role: "bot",
+        kind: "activity",
+        tool: failedTurnTool(error instanceof Error ? error.message : String(error)),
+      });
+    }
+  });
+  const tracked = next.finally(() => finishGroupTurnOperation(groupId, operation));
+  groupQueues.set(threadId, tracked.catch(() => {}));
+  return message;
+}
 
 function startGroupTurn(
   groupId: string,
@@ -10898,6 +11115,11 @@ function startGroupTurn(
   if (!ownsThread) {
     throw Object.assign(new Error("no such room task"), { status: 404 });
   }
+  const liveRoundtable = roundtable.live(threadId);
+  if ((channelMode === "goal" || options.calendar) && liveRoundtable) {
+    throw Object.assign(new Error("a roundtable is in session on this thread"), { status: 409 });
+  }
+  const seated = channelMode === "chat" && liveRoundtable;
   const members = group.memberIds
     .map((id) => store.bot(id))
     .filter((bot): bot is NonNullable<typeof bot> => Boolean(bot));
@@ -10911,7 +11133,7 @@ function startGroupTurn(
     throw Object.assign(new Error("the selected goal coordinator is not an active room member"), { status: 409 });
   }
   // Read the room before this message is appended just below.
-  const autoCandidate = !group.dm && channelMode === "chat" && group.defaultResponder.kind === "auto" &&
+  const autoCandidate = !seated && !group.dm && channelMode === "chat" && group.defaultResponder.kind === "auto" &&
     deciderReady(cfg, "roomRouting");
   const historyBeforeSend = autoCandidate
     ? (() => {
@@ -10966,6 +11188,18 @@ function startGroupTurn(
   if (options.trigger) turnTriggers.set(threadId, options.trigger);
   const titled = group.dm ? null : store.titleGroupTaskFromFirstMessage(group.id, text, threadId);
   const snippet = titled?.title;
+  const titleText = extractTurnImages(text).text;
+  const startTitle = (titleBot: (typeof members)[number]) => {
+    const titleInstance = registry.get(titleBot.modelSelection.instanceId);
+    // An engine the organisation disallows never receives the text, even for a title.
+    if (titled && snippet && titleText.trim() && llmThreadTitlesEnabled(cfg) && titleInstance?.generateText && !policyModelRefusal(titleInstance)) {
+      void generateThreadTitle(titleInstance, titleText)
+        .then((title) => {
+          if (title) store.retitleGroupTask(group.id, threadId, snippet, title);
+        })
+        .catch(() => undefined);
+    }
+  };
 
   const archived = members.filter((member) => member.hidden);
   const mentionedArchived = mentionedBots(text, archived.map(({ name }) => ({ name })))[0]; for (const line of placesElsewhere.missed(text, store.bots)) store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: line, ok: false } });
@@ -10978,6 +11212,12 @@ function startGroupTurn(
         ok: false,
       },
     });
+  }
+  if (seated) {
+    const chairId = roundtable.project(group.id, () => undefined).find((row) => row.threadId === threadId)?.chairBotId;
+    const chair = chairId ? members.find((member) => member.id === chairId) : undefined;
+    if (chair) startTitle(chair);
+    return startSeatedGroupTurn(group.id, threadId, message, options);
   }
   let responders = roomResponders(text, members, group.defaultResponder);
   if (!group.dm) {
@@ -11019,18 +11259,6 @@ function startGroupTurn(
     return message;
   }
 
-  const titleText = extractTurnImages(text).text;
-  const startTitle = (titleBot: (typeof members)[number]) => {
-    const titleInstance = registry.get(titleBot.modelSelection.instanceId);
-    // An engine the organisation disallows never receives the text, even for a title.
-    if (titled && snippet && titleText.trim() && llmThreadTitlesEnabled(cfg) && titleInstance?.generateText && !policyModelRefusal(titleInstance)) {
-      void generateThreadTitle(titleInstance, titleText)
-        .then((title) => {
-          if (title) store.retitleGroupTask(group.id, threadId, snippet, title);
-        })
-        .catch(() => undefined);
-    }
-  };
   if (!autoRoute) startTitle(goalCoordinator ?? responders[0]!);
 
   const operation = beginGroupTurnOperation(
@@ -11056,16 +11284,7 @@ function startGroupTurn(
   const prev = groupQueues.get(threadId) ?? Promise.resolve();
   const next = prev.then(async () => {
     if (operation.cancelled) return;
-    const speaker = groupSpeakers.get(threadId);
-    if (speaker) {
-      const owner = store.bot(speaker.botId);
-      store.appendMessage(threadId, {
-        role: "bot",
-        kind: "activity",
-        tool: { name: owner ? serverLine(threadLanguage(threadId), "server.rooms.stillStopping", { bot: owner.name }) : serverLine(threadLanguage(threadId), "server.rooms.someoneStillStopping"), ok: false },
-      });
-      return;
-    }
+    if (roomStillStopping(threadId)) return;
     if (goalCoordinator) {
       await runGroupGoalOperation({ groupId, threadId, coordinator: goalCoordinator, members, operation });
     } else {
@@ -11218,7 +11437,11 @@ function deliverCalendarCall(call: CalendarCall, scheduledFor: number): void {
   const threadIds = new Set([group.threadId, ...(group.tasks ?? []).map((task) => task.threadId)]);
   const messages = [...threadIds].flatMap((threadId) => store.messagesFor(threadId));
   if (messages.some((message) => message.sendId === sendId)) return;
-  startGroupTurn(group.id, text, undefined, sendId);
+  try {
+    startGroupTurn(group.id, text, undefined, sendId, "chat", undefined, { calendar: true });
+  } catch (error) {
+    console.warn(`calendar call "${call.name}" did not start: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 function resolveReplyTarget(threadId: string, value: unknown): Message | undefined { return replyTargetIn(store.messagesFor(threadId), value); }
@@ -11305,6 +11528,12 @@ function roomPostEligibility(
   if (verdict.problem === "private") return { ok: false, status: 403, error: PRIVATE_CHAT_ROOM_WRITE };
   // A bot must never settle whether a room's unfinished setup still counts as pending.
   return { ok: false, status: 409, error: "that room is still being set up — it cannot receive messages yet" };
+}
+
+function roundtableOffSeat(threadId: string, botId: string): string | null {
+  if (!roundtable.live(threadId)) return null;
+  if (roundtable.admit(threadId, botId, "member-turn") === "refuse") return "a roundtable is in session on this thread";
+  return null;
 }
 
 function proposalPersistence(botId: string, threadId: string, opensCard = true) {
@@ -12416,6 +12645,10 @@ ROUTES.push(createChannelRoutes({
   runningTurnInstance,
   startGroupTurn, engineSteersImages,
   applyRoomHoldsFromMessage,
+  roundtableLive: (threadId) => roundtable.live(threadId),
+  openRoundtable: (groupId, threadId, body) => roundtable.open(groupId, threadId, body),
+  adjournRoundtable: (groupId, threadId) => roundtable.adjourn(groupId, threadId),
+  cancelRoundtableBlocked: cancelRoundtableBlockedAssignments,
   cancelGroupTurnOperations,
   drainQueuedChannelSends,
   clearTurnDigestState,
@@ -14099,6 +14332,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const result = await coordinateBots({ groupId, botIds, message, reason: reason || undefined, rework, thread, title: title || undefined, reply, consult, inMyFolder, doneWhen: doneWhen || undefined, ...(answers ? { answers } : {}) });
         return json(res, result.status, result.body);
       }
+      if (method === "POST" && path === "/api/internal/grant-seat") {
+        const parsed = z.object({
+          decision: z.enum(["advance", "skip", "yield", "adjourn"]),
+        }).strict().safeParse(await readInternalBody());
+        if (!parsed.success) return json(res, 400, { error: "decision must be advance, skip, yield, or adjourn" });
+        const granted = grantSeat({ threadId: internalCapability.threadId, botId: internalSender.id, decision: parsed.data.decision });
+        if (!granted.ok) return json(res, 409, { error: granted.error });
+        return json(res, 200, { ok: true });
+      }
       if (method === "GET" && path === "/api/internal/room-targets") {
         const source = store.groupByThread(internalCapability.threadId);
         if (source && (source.dm || !source.memberIds.includes(internalSender.id))) {
@@ -14183,6 +14425,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const eligibility = roomPostEligibility(from, room, fromThreadId);
         if (!eligibility.ok) return json(res, eligibility.status, { error: eligibility.error });
+        const offSeat = roundtableOffSeat(room.threadId, from.id);
+        if (offSeat) return json(res, 409, { error: offSeat });
         // The budget is read BEFORE any approval card and CHARGED only on the path that actually appends.
         const askBudget = (bot: BotRecord, group: GroupRecord) => {
           const attempt: RoomPostAttempt = {
@@ -14221,6 +14465,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!freshFrom || !freshRoom) return json(res, 404, { error: "that bot or room no longer exists" });
           const stillEligible = roomPostEligibility(freshFrom, freshRoom, fromThreadId);
           if (!stillEligible.ok) return json(res, stillEligible.status, { error: stillEligible.error });
+          const stillOffSeat = roundtableOffSeat(freshRoom.threadId, freshFrom.id);
+          if (stillOffSeat) return json(res, 409, { error: stillOffSeat });
           poster = freshFrom;
           room = freshRoom;
         }

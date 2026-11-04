@@ -129,6 +129,8 @@ export interface LiveHandoffEdge {
 export interface CoordinatorHost {
   /** Recheck addresses and route permission immediately before every dispatch. */
   validate(node: HandoffView, parent?: HandoffView): string | undefined;
+  /** A non-empty string queues this assignment with that note, ahead of `busy`. */
+  hold?(node: HandoffView): string | undefined;
   busy(node: HandoffView): boolean;
   /** For a root this is the person's own conversation continuing: person-visible, never internal. */
   run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<HostTurnResult>;
@@ -178,6 +180,8 @@ export interface Coordinator {
   prune(before: number): number;
   sharedRequest(node: HandoffView): { id: string; botIds: string[] };
   cancelRoom(groupId: string, threadId?: string, reason?: string, status?: "failed" | "cancelled"): void;
+  /** Cancel these assignments only while they are still queued. A terminal row stays as it is. */
+  cancelQueued(ids: ReadonlySet<string>, reason: string): void;
   cancelDirect(threadId: string, reason?: string): void;
   activeDirect(threadId: string): boolean;
   assignerOf(threadId: string): HandoffView | undefined;

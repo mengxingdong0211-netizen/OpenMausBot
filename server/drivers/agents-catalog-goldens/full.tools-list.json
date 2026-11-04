@@ -191,6 +191,29 @@
       }
     },
     {
+      "name": "grant_seat",
+      "description": "Only while you hold the chair of a live roundtable. Record one decision for the floor: advance calls the next pending seat, skip marks that seat skipped then advances, yield returns the floor to the person, adjourn ends the roundtable. The decision applies after this turn ends and starts no teammate. Do not name a bot.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "advance",
+              "skip",
+              "yield",
+              "adjourn"
+            ],
+            "description": "What the chair does with the floor."
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      }
+    },
+    {
       "name": "assignment_status",
       "description": "Read-only: one assignment's status, outcome and result (give its id from a coordinate_bots receipt or a list_threads row), or, with no id, everything this conversation still waits on. A result resumes you on its own, so a bot in a turn never needs this to wait: use it in a later turn when the person asks how a hand-off is going. A standing external runtime long-polls it with wait_ms instead of being resumed. It starts nothing and changes nothing.",
       "inputSchema": {
