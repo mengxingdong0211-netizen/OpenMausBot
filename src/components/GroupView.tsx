@@ -18,6 +18,7 @@ import {
 import { BotAvatar } from "./Avatar";
 import { ScreenFrame } from "./ScreenFrame";
 import { RoomHoldsBanner } from "./RoomHoldsBanner";
+import { RoundtableStrip } from "./RoundtableStrip";
 import { ThreadChip } from "./ThreadChip";
 import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
@@ -1002,6 +1003,9 @@ export function GroupView({ group }: { group: Group }) {
 
   useEffect(() => setFolderOpen(false), [group.id]);
   useEffect(() => setMembersOpen(false), [group.id]);
+  const reportRoundtable = (cause: unknown) => {
+    dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) });
+  };
 
   return (
     <main className="relative flex h-full min-w-0 flex-1 flex-col bg-app">
@@ -1046,6 +1050,19 @@ export function GroupView({ group }: { group: Group }) {
       )}
 
       {!setupPending && !group.dm && <RoomHoldsBanner group={group} members={members} />}
+      {!setupPending && !group.dm && (
+        <RoundtableStrip
+          group={group}
+          members={members}
+          remoteClient={remoteClient}
+          onOpen={(body) => {
+            void api(`/api/groups/${group.id}/roundtable`, { method: "POST", body: JSON.stringify(body) }).catch(reportRoundtable);
+          }}
+          onAdjourn={(threadId) => {
+            void api(`/api/groups/${group.id}/roundtable?threadId=${encodeURIComponent(threadId)}`, { method: "DELETE" }).catch(reportRoundtable);
+          }}
+        />
+      )}
 
       {!setupPending && !simpleHeader && <RoomBulletin group={group} remoteClient={remoteClient} />}
 

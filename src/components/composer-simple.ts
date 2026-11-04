@@ -1,5 +1,6 @@
 import type { Bot, Group } from "@/state/store";
 import { effectiveDefaultResponder, groupComposerHint } from "@/lib/group-routing";
+import { threadRoundtable } from "@/lib/roundtable";
 import { t } from "@/lib/i18n";
 import { BOT_BUTTON, botButtonStyle, botButtonTone, type BotButton } from "@/lib/bot-button";
 
@@ -45,6 +46,9 @@ export function composerPlaceholder({ simple, locked, approval, attaching, liste
   if (simple) {
     if (!busy && goal) return group ? t("composer.placeholder.goal", { name: group.name }) : t("composer.placeholder.goalSolo", { name: botName });
     if (!busy && !group && setupHint) return setupHint;
+    if (!busy && group && threadRoundtable(group)) {
+      return t("composer.placeholder.group", { name: group.name, hint: groupComposerHint(group, members, { jevOn }) });
+    }
     if (group && !group.dm && effectiveDefaultResponder(group, members).kind === "mentions") {
       return t("composer.placeholder.group", { name: group.name, hint: t("composer.hint.mentions") });
     }
