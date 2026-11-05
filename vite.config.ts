@@ -57,8 +57,9 @@ export default defineConfig({
   },
   server: {
     // IPv4 explicitly — a bare ::1 bind makes localhost a coin-flip for
-    // clients that resolve IPv4 first
-    host: "127.0.0.1",
+    // clients that resolve IPv4 first. Cloud Agents / port forwards need
+    // 0.0.0.0; set OMB_UI_HOST=0.0.0.0 there. Desktop keeps 127.0.0.1.
+    host: process.env.OMB_UI_HOST || "127.0.0.1",
     port: Number(process.env.OMB_UI_PORT) || 5199,
     // packager output lands inside the repo — its HTML files must never
     // trigger dev full-page reloads

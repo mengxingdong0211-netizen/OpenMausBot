@@ -62,6 +62,7 @@ import {
   type PasteAttachment,
 } from "@/lib/composer-attachments";
 import { goalCoordinatorForComposer, jevRoomRoutingOn, openTaskWorking, roomRespondersForComposer } from "@/lib/group-routing";
+import { threadRoundtable } from "@/lib/roundtable";
 import { composerPlaceholder, sendLabels, SIMPLE_CONTROL, slotColors } from "./composer-simple";
 import { PendingApprovalActions, PendingApprovalPanel, pendingApprovals } from "./PendingApproval";
 import { CallButton } from "./CallView";
@@ -296,9 +297,10 @@ export function Composer({
     const responders = roomRespondersForComposer(message, members ?? [], group);
     return responders.length > 0 && responders.every(botSupportsImages);
   };
-  const typedGoalText = !group?.dm ? goalTextFromComposer(text) : null;
+  const roundtable = group ? threadRoundtable(group) : undefined;
+  const typedGoalText = !group?.dm && !roundtable ? goalTextFromComposer(text) : null;
   const effectiveText = typedGoalText ?? text;
-  const effectiveChannelMode = typedGoalText !== null ? "goal" : channelMode;
+  const effectiveChannelMode = roundtable ? "chat" : typedGoalText !== null ? "goal" : channelMode;
   const engineSupportsImages = imageTargetsSupport(effectiveText, effectiveChannelMode);
 
   const slash = composerSlashTrigger(text, caret);
@@ -309,7 +311,7 @@ export function Composer({
   const commandCandidates = useMemo(() => {
     if (!slash || slash.start === dismissedSlashAt) return [];
     const available: ComposerSlashCommand[] = [];
-    if (!group?.dm) available.push({
+    if (!group?.dm && !roundtable) available.push({
       kind: "command",
       id: "goal",
       label: "/goal",
@@ -331,7 +333,7 @@ export function Composer({
     });
     available.push(...skillSlashCommands(slashSkills));
     return available.filter((command) => slashCommandMatches(command, slash.query));
-  }, [slash, dismissedSlashAt, group, bot, canLearn, state.instances, locale, slashSkills]);
+  }, [slash, dismissedSlashAt, group, roundtable, bot, canLearn, state.instances, locale, slashSkills]);
   const commandPickerOpen = commandCandidates.length > 0;
 
   const mention = mentionQueryAt(text, caret); const teammates = useTeammates(); const viewer = useViewerEmail();
@@ -699,7 +701,7 @@ export function Composer({
     }
     setChannelMode((current) => current === "goal" ? "chat" : "goal");
   };
-  const goal = !group?.dm ? { on: effectiveChannelMode === "goal", onToggle: toggleGoal, solo: !group } : undefined;
+  const goal = !group?.dm && !roundtable ? { on: effectiveChannelMode === "goal", onToggle: toggleGoal, solo: !group } : undefined;
 
   return (
     <div className={cn("pointer-events-none relative px-5", simpleDock ? "pb-4" : "pb-3")}>
@@ -937,7 +939,7 @@ export function Composer({
           placeholder={composerPlaceholder({
             simple: !advanced, locked: setupLocked, approval: blocking, attaching: attachmentPending, listening: recording,
             replying: Boolean(replyTo), busy, canSteer, queued: pendingCount > 0, busyName, sendLabel, group, members: members ?? [],
-            jevOn: jevRoomRoutingOn(state.config), goal: channelMode === "goal", botName: bot?.name ?? "",
+            jevOn: jevRoomRoutingOn(state.config), goal: roundtable ? false : channelMode === "goal", botName: bot?.name ?? "",
             setupHint: group ? null : setupRequestPlaceholder(bot, threadId),
           })}
           aria-label={t("composer.placeholder.bot", { name: group ? group.name : (bot?.name ?? "") })}
